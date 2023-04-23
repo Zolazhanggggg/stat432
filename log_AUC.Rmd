@@ -1,0 +1,72 @@
+---
+title: "Logistic Reg AUC"
+author: "Yen-Hsun Lin"
+date: "2023-04-23"
+output: html_document
+---
+
+Compute AUC for logistic 
+
+```{r}
+library(data.table)
+library(caret)
+library(MASS)
+library(DescTools)
+loan <- fread("loan_cln.csv", stringsAsFactors = TRUE)
+loan$TARGET <- factor(loan$TARGET)
+
+set.seed(432)
+use.index <- sample(nrow(loan), 20000)
+
+loan.use <- loan[use.index,]
+trn.index <- sample(nrow(loan.use), round(nrow(loan.use) * 0.5))
+
+loan.trn <- loan.use[trn.index,]
+loan.tst <- loan.use[-trn.index,]
+
+
+```
+
+
+```{r}
+selected_fml <- TARGET ~ DAYS_EMPLOYED + REGION_RATING_CLIENT_W_CITY + OCCUPATION_TYPE +
+    DAYS_BIRTH + NAME_CONTRACT_TYPE + DAYS_LAST_PHONE_CHANGE +
+    DEF_30_CNT_SOCIAL_CIRCLE + AMT_GOODS_PRICE + AMT_CREDIT +
+    REG_CITY_NOT_WORK_CITY + AMT_INCOME_TOTAL + FLAG_OWN_CAR +
+    REGION_POPULATION_RELATIVE + CODE_GENDER
+
+
+log_mod <- glm( selected_fml , data = loan.trn, family = "binomial")
+
+cut_offs <- seq(0,1,by = 0.0001)
+pred_prob <- predict(log_mod, newdata = loan.tst, type = "response")
+
+
+get.fptp <- function(prob, cutoffs, actual){
+  cut_length <- length(cut_offs)
+  cnt_pos <- sum(actual == 1)
+  cnt_neg <- sum(actual == 0)
+  output_mat <- matrix( numeric(cut_length * 2), ncol = 2 )
+  colnames(output_mat) <- c("FP_rate", "TP_rate")
+  for (i in 1:cut_length){
+    cnt_TP <- sum(prob > cutoffs[i] & (actual == 1) )
+    cnt_FP <- sum(prob > cutoffs[i] & (actual == 0) )
+    output_mat[i,1] = cnt_FP/cnt_neg
+    output_mat[i,2] = cnt_TP/cnt_pos
+  }
+  output_mat
+}
+
+
+test <- get.fptp(pred_prob, cut_offs, loan.tst$TARGET)
+plot(test[,1], test[,2])
+
+
+## warning is due to cutoff resulting the same classifier
+
+AUC(test[,1], test[,2], method = "trapezoid")
+```
+
+
+
+
