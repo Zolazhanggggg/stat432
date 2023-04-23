@@ -1,0 +1,117 @@
+---
+title: "Logistic and variable selection"
+author: "Yen-Hsun Lin"
+date: "2023-04-22"
+output: html_document
+---
+
+
+
+This file will perform variable selection with logistic regression and forward selection. Note that I only sample 20000 observations (10000 as train, 10000 as test) for the sake of computing time. 
+
+
+
+The strategy I use to choose variables is 1) first use forward selection for a handful of variables 2) perform lack of fit test on individual feature and cut at 5% significance level  
+
+We will use 10 folds
+```{r}
+library(data.table)
+library(caret)
+library(MASS)
+loan <- fread("loan_cln.csv", stringsAsFactors = TRUE)
+loan$TARGET <- factor(loan$TARGET)
+
+set.seed(432)
+use.index <- sample(nrow(loan), 20000)
+
+loan.use <- loan[use.index,]
+trn.index <- sample(nrow(loan.use), round(nrow(loan.use) * 0.5))
+
+loan.trn <- loan.use[trn.index,]
+loan.tst <- loan.use[-trn.index,]
+
+```
+
+
+```{r}
+log_full <- glm(TARGET ~ . - SK_ID_CURR, data = loan.trn, family = "binomial")
+log_null <- glm(TARGET ~ 1, data = loan.trn, family = "binomial")
+
+
+log_fs <- stepAIC(log_null, scope = 
+                    list(upper = log_full,
+                         lower = ~ 1), direction = "forward", 
+                  trace = 0, steps = 20)
+
+# log_fs_bic <- stepAIC(log_null, scope = 
+#                     list(upper = log_full,
+#                          lower = ~ 1), direction = "forward", 
+#                   trace = 0, k = log(nrow(loan.trn)))
+
+summary(log_fs)
+# summary(log_fs_bic)
+
+
+pred <- factor( ifelse( predict(log_fs, newdata = loan.tst, type = "response") > 0.2, 1, 0))
+
+table( pred, loan.tst$TARGET)
+
+# pred_bic <- factor( ifelse( predict(log_fs_bic, newdata = loan.tst, type = "response") > 0.15, 1, 0))
+# 
+# anova(log_fs_bic,log_fs )
+# table(pred_bic, loan.tst$TARGET)
+```
+
+Next step is to mannually reduced some non-significant var. 
+
+```{r}
+drop1(log_fs, test = "Chisq")
+## drop the one with highest p-value larger than 5%
+
+## drop DAYS_REGISTRATION
+step_mod1 <- update(log_fs, .~.-DAYS_REGISTRATION)
+
+drop1(step_mod1, test = "Chisq")
+
+## drop AMT_ANNUITY
+
+step_mod1 <- update(step_mod1, .~.-AMT_ANNUITY)
+drop1(step_mod1, test = "Chisq")
+
+## drop FAMILY_STATUS  
+
+step_mod1 <- update(step_mod1, .~.-FAMILY_STATUS  )
+drop1(step_mod1, test = "Chisq")
+
+## drop NAME_FAMILY_STATUS
+
+step_mod1 <- update(step_mod1, .~.-NAME_FAMILY_STATUS  )
+drop1(step_mod1, test = "Chisq")
+
+## drop NAME_EDUCATION_TYPE
+
+step_mod1 <- update(step_mod1, .~.-NAME_EDUCATION_TYPE )
+drop1(step_mod1, test = "Chisq")
+
+
+## drop DAYS_ID_PUBLISH
+
+step_mod1 <- update(step_mod1, .~.-DAYS_ID_PUBLISH )
+drop1(step_mod1, test = "Chisq")
+
+## drop CNT_CHILDREN
+
+step_mod1 <- update(step_mod1, .~.-CNT_CHILDREN)
+drop1(step_mod1, test = "Chisq")
+
+## We see code_gender has p-value really close to 5% so consider keeping it 
+
+
+
+pred_mod1 <- factor( ifelse( predict(step_mod1, newdata = loan.tst, type = "response") > 0.15, 1, 0))
+
+table(pred_mod1, loan.tst$TARGET)
+
+
+```
+
