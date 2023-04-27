@@ -1,0 +1,167 @@
+---
+title: "Process Data and Testing"
+author: "Yen-Hsun Lin"
+date: "2023-04-27"
+output: html_document
+---
+
+This file contains methods used for balancing data as well as the veriable selection process with forward logistic model. 
+
+
+```{r}
+library(data.table)
+library(caret)
+library(MASS)
+library(DescTools)
+trn <- fread("loan_balanced_trn.csv")
+tst <- fread("loan_balanced_tst.csv")
+```
+
+
+
+```{r, eval = FALSE}
+
+## This chunk is the evaluated. It was used when I divided the data. 
+
+loan <- fread("loan_cln.csv", stringsAsFactors = TRUE)
+loan$TARGET <- factor(loan$TARGET)
+set.seed(432)
+
+
+loan.0 <- loan[loan$TARGET==0,]
+loan.1 <- loan[loan$TARGET==1,]
+
+
+## Select 10000 observations from each 
+
+set.seed(432)
+
+idx0 <- sample(nrow(loan.0), 10000)
+idx1 <- sample(nrow(loan.1), 10000)
+
+
+loan_new <- rbind(loan.0[idx0,], loan.1[idx1,])
+
+sum(loan_new$TARGET==1)
+which(loan$TARGET==1)
+
+set.seed(432)
+
+trn.index <- sample(nrow(loan_new), round(nrow(loan_new) * 0.5))
+trn <- loan_new[trn.index, ]
+tst <- loan_new[-trn.index, ]
+
+fwrite(trn, "loan_balanced_trn.csv")
+fwrite(tst, "loan_balanced_tst.csv")
+```
+
+
+
+## Forward selection 
+
+```{r, eval = FALSE}
+full <- glm(TARGET ~ . - SK_ID_CURR, data = trn, family = "binomial")
+null <- glm(TARGET ~ 1, data = trn, family = "binomial")
+
+
+fs <- stepAIC(null, scope = 
+                    list(upper = full,
+                         lower = ~ 1), direction = "forward", 
+                  trace = 0, steps = 20)
+```
+
+
+
+```{r}
+
+## For the sake of evaluation time, the previous chunk is not executed 
+## I just fit the final foward selection model here
+
+fs <- glm(formula = TARGET ~ DAYS_EMPLOYED + OCCUPATION_TYPE + 
+            REGION_RATING_CLIENT_W_CITY + 
+            DAYS_LAST_PHONE_CHANGE + NAME_CONTRACT_TYPE + AMT_GOODS_PRICE + 
+    AMT_CREDIT + DAYS_BIRTH + NAME_EDUCATION_TYPE + FLAG_OWN_CAR + 
+    NAME_INCOME_TYPE + DAYS_ID_PUBLISH + CODE_GENDER + DAYS_REGISTRATION + 
+    FLAG_WORK_PHONE + AMT_REQ_CREDIT_BUREAU_YEAR + FLAG_OWN_REALTY + 
+    DEF_30_CNT_SOCIAL_CIRCLE + AMT_ANNUITY + AMT_REQ_CREDIT_BUREAU_HOUR, 
+    family = "binomial", data = trn)
+
+drop1(fs, test = "Chisq")
+## drop the one with highest p-value larger than 5%
+
+
+## We see that all predictors actually has p-value really small 
+
+
+pred_fs <- factor( ifelse( predict(fs, newdata = tst, type = "response") > 0.5, 1, 0))
+
+table(pred_fs, tst$TARGET)
+
+
+
+```
+
+## Checking if the model is better than no informaiton rate 
+
+```{r}
+(no_info1 <- mean(tst$TARGET == 0))
+
+calc_accu <- function(actual, pred){
+  mean(actual == pred)
+}
+
+cs <- seq(0.01,0.99, by = 0.01)
+accus <- numeric(length(cs))
+
+for (i in 1:length(cs)){
+  pred <- factor( ifelse( predict(fs, newdata = tst, type = "response") > cs[i], 1, 0))
+  accu <- calc_accu(tst$TARGET, pred)
+  accus[i] <- accu
+  if (accu > no_info1) {
+    print(cs[i])
+  }
+}
+
+which.max(accus)
+
+pred_mod1 <- factor( ifelse( predict(fs, newdata = tst, type = "response") > 0.52, 1, 0))
+
+table(pred_mod1, tst$TARGET)
+
+accus[52]
+```
+
+
+
+## AUC
+
+```{r}
+cut_offs <- seq(0,1,by = 0.0001)
+pred_prob <- predict(fs, newdata = tst, type = "response")
+
+
+get.fptp <- function(prob, cutoffs, actual){
+  cut_length <- length(cut_offs)
+  cnt_pos <- sum(actual == 1)
+  cnt_neg <- sum(actual == 0)
+  output_mat <- matrix( numeric(cut_length * 2), ncol = 2 )
+  colnames(output_mat) <- c("FP_rate", "TP_rate")
+  for (i in 1:cut_length){
+    cnt_TP <- sum(prob > cutoffs[i] & (actual == 1) )
+    cnt_FP <- sum(prob > cutoffs[i] & (actual == 0) )
+    output_mat[i,1] = cnt_FP/cnt_neg
+    output_mat[i,2] = cnt_TP/cnt_pos
+  }
+  output_mat
+}
+
+
+test <- get.fptp(pred_prob, cut_offs, tst$TARGET)
+plot(test[,1], test[,2])
+
+
+## warning is due to cutoff resulting the same classifier
+
+AUC(test[,1], test[,2], method = "trapezoid")
+```
+
