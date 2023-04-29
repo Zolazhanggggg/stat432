@@ -1,0 +1,33 @@
+```{r}
+trn <- read.csv(url("https://raw.githubusercontent.com/anecnhoj53/stat432/master/loan_balanced_tst.csv"))
+tst <- read.csv(url("https://raw.githubusercontent.com/anecnhoj53/stat432/master/loan_balanced_trn.csv"))
+```
+
+```{r}
+selected_fml <- TARGET ~ DAYS_EMPLOYED + OCCUPATION_TYPE + REGION_RATING_CLIENT_W_CITY + 
+    DAYS_LAST_PHONE_CHANGE + NAME_CONTRACT_TYPE + AMT_GOODS_PRICE + 
+    AMT_CREDIT + DAYS_BIRTH + NAME_EDUCATION_TYPE + FLAG_OWN_CAR + 
+    NAME_INCOME_TYPE + DAYS_ID_PUBLISH + CODE_GENDER + DAYS_REGISTRATION + 
+    FLAG_WORK_PHONE + AMT_REQ_CREDIT_BUREAU_YEAR + FLAG_OWN_REALTY + 
+    DEF_30_CNT_SOCIAL_CIRCLE + AMT_ANNUITY + AMT_REQ_CREDIT_BUREAU_HOUR
+
+ctrl <- trainControl(method = "CV", number = 10)
+
+calc_mse <- function(actual, predicted) {
+  mean((actual - predicted) ^ 2)
+}
+```
+
+10-fold CV & select best parameter & its CV error for my chosen paramter 
+```{r, eval = FALSE}
+set.seed(432)
+M_k_1 <- train(selected_fml, 
+             data = trn, 
+             trControl = ctrl, 
+             method = "knn", 
+             tuneGrid=data.frame(k=seq(1,100,1)),
+             preProcess = c("center", "scale"))
+best_k <-M_k_1$bestTune
+best_k # k = 80 
+M_k_1$results$RMSE[M_k_1$results$k == as.numeric(best_k)]
+```
